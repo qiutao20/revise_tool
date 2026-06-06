@@ -970,6 +970,10 @@
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="9"></circle></svg>
         记录
       </button>
+      <button class="tab-button" data-view="docs">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h5"></path></svg>
+        文档
+      </button>
       <button class="tab-button" data-view="data">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5 5 5-5"></path><path d="M12 15V3"></path></svg>
         数据
@@ -1124,6 +1128,37 @@
             </div>
           </section>
         </div>
+      </section>
+
+      <section id="docs" class="view">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>私有文档</h2>
+            <span class="badge medium">需要 GitHub token</span>
+          </div>
+          <div class="task-list">
+            <article class="log-entry">
+              <div>
+                <time>Private HTML</time>
+                <p>英文回应草稿</p>
+              </div>
+              <button class="primary" data-private-doc="docs/rebuttal-draft-en.html">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="M10 14L21 3"></path></svg>
+                打开
+              </button>
+            </article>
+            <article class="log-entry">
+              <div>
+                <time>Private HTML</time>
+                <p>中文回应草稿</p>
+              </div>
+              <button class="primary" data-private-doc="docs/rebuttal-draft-zh.html">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="M10 14L21 3"></path></svg>
+                打开
+              </button>
+            </article>
+          </div>
+        </section>
       </section>
 
       <section id="data" class="view">
@@ -1585,10 +1620,10 @@
       githubWriteTimer = setTimeout(() => pushToGithub({ auto: true }), 6000);
     }
 
-    function githubContentApiUrl(includeRef = false) {
+    function githubContentApiUrlForPath(pathValue, includeRef = false) {
       const owner = encodeURIComponent(githubSync.owner);
       const repo = encodeURIComponent(githubSync.repo);
-      const path = githubSync.path
+      const path = pathValue
         .replace(/^\/+/, "")
         .split("/")
         .filter(Boolean)
@@ -1596,6 +1631,10 @@
         .join("/");
       const ref = includeRef ? `?ref=${encodeURIComponent(githubSync.branch)}` : "";
       return `${GITHUB_API_ROOT}/repos/${owner}/${repo}/contents/${path}${ref}`;
+    }
+
+    function githubContentApiUrl(includeRef = false) {
+      return githubContentApiUrlForPath(githubSync.path, includeRef);
     }
 
     function githubHeaders() {
@@ -1647,6 +1686,44 @@
         text: base64ToUtf8(payload.content || ""),
         htmlUrl: payload.html_url || ""
       };
+    }
+
+    async function githubReadTextAtPath(pathValue) {
+      const response = await fetch(githubContentApiUrlForPath(pathValue, true), { headers: githubHeaders() });
+      if (!response.ok) {
+        throw new Error(`GitHub ${response.status}: ${await githubErrorMessage(response)}`);
+      }
+      const payload = await response.json();
+      return base64ToUtf8(payload.content || "");
+    }
+
+    async function openPrivateDocument(pathValue) {
+      readGithubInputs();
+      if (!isGithubConfigured()) {
+        updateGithubStatus("请先粘贴 token 并保存配置。");
+        showToast("请先配置 GitHub token");
+        return;
+      }
+      const tab = window.open("", "_blank");
+      if (!tab) {
+        showToast("浏览器拦截了新标签页");
+        return;
+      }
+      tab.document.write("<!doctype html><title>Loading</title><p style=\"font-family: system-ui; padding: 24px;\">正在读取私有文档...</p>");
+      tab.document.close();
+      try {
+        const html = await githubReadTextAtPath(pathValue);
+        const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        tab.location.replace(url);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (error) {
+        console.error(error);
+        tab.document.open();
+        tab.document.write(`<!doctype html><title>Load failed</title><pre style="font-family: ui-monospace, monospace; white-space: pre-wrap; padding: 24px;">${escapeHtml(error.message)}</pre>`);
+        tab.document.close();
+        showToast("私有文档打开失败");
+      }
     }
 
     async function githubWriteContent(content, sha) {
@@ -2349,6 +2426,9 @@
 
       document.querySelectorAll(".tab-button").forEach(button => {
         button.addEventListener("click", () => activateView(button.dataset.view));
+      });
+      document.querySelectorAll("[data-private-doc]").forEach(button => {
+        button.addEventListener("click", () => openPrivateDocument(button.dataset.privateDoc));
       });
 
       $("#taskSearch").addEventListener("input", event => {
