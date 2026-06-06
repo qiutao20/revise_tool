@@ -1152,11 +1152,11 @@
           <div class="form-grid">
             <label>
               <span class="field-label">Owner</span>
-              <input id="githubOwner" type="text" autocomplete="off" placeholder="your-github-name">
+              <input id="githubOwner" type="text" autocomplete="off" placeholder="qiutao20">
             </label>
             <label>
               <span class="field-label">Repository</span>
-              <input id="githubRepo" type="text" autocomplete="off" placeholder="revise-progress">
+              <input id="githubRepo" type="text" autocomplete="off" placeholder="private_data">
             </label>
             <label>
               <span class="field-label">Branch</span>
@@ -1275,8 +1275,8 @@
     };
 
     const defaultGithubSyncConfig = {
-      owner: "",
-      repo: "",
+      owner: "qiutao20",
+      repo: "private_data",
       branch: "main",
       path: "revision-progress.json",
       token: "",
@@ -1350,7 +1350,15 @@
       const saved = localStorage.getItem(SYNC_CONFIG_KEY);
       if (!saved) return { ...defaultGithubSyncConfig };
       try {
-        return { ...defaultGithubSyncConfig, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        return {
+          ...defaultGithubSyncConfig,
+          ...parsed,
+          owner: parsed.owner || defaultGithubSyncConfig.owner,
+          repo: parsed.repo || defaultGithubSyncConfig.repo,
+          branch: parsed.branch || defaultGithubSyncConfig.branch,
+          path: parsed.path || defaultGithubSyncConfig.path
+        };
       } catch (error) {
         console.warn(error);
         return { ...defaultGithubSyncConfig };
@@ -1508,7 +1516,7 @@
         githubOwner: githubSync.owner,
         githubRepo: githubSync.repo,
         githubBranch: githubSync.branch || "main",
-        githubPath: githubSync.path || "revision-progress.json",
+        githubPath: githubSync.path || defaultGithubSyncConfig.path,
         githubToken: githubSync.token
       };
       Object.entries(values).forEach(([id, value]) => {
@@ -1527,7 +1535,7 @@
         owner: $("#githubOwner").value.trim(),
         repo: $("#githubRepo").value.trim(),
         branch: $("#githubBranch").value.trim() || "main",
-        path: $("#githubPath").value.trim() || "revision-progress.json",
+        path: $("#githubPath").value.trim() || defaultGithubSyncConfig.path,
         token: $("#githubToken").value.trim(),
         autoPull: $("#githubAutoPull").checked,
         autoPush: $("#githubAutoPush").checked
@@ -1543,7 +1551,7 @@
       if (message) lines.push(message);
       if (isGithubConfigured(false)) {
         lines.push(`目标：${githubSync.owner}/${githubSync.repo}@${githubSync.branch}:${githubSync.path}`);
-        lines.push(githubSync.token ? "Token：已保存在本浏览器" : "Token：未填写，私有仓库和推送不可用");
+        lines.push(githubSync.token ? "Token：已保存在本浏览器" : "Token：未填写；通常只需要粘贴 token 后保存配置。");
         lines.push(githubSync.dirty ? "状态：本地有未推送修改" : "状态：本地已保存");
         if (githubSync.lastSyncedAt) {
           lines.push(`上次同步：${new Date(githubSync.lastSyncedAt).toLocaleString("zh-CN")}`);
@@ -1789,6 +1797,9 @@
       $("#githubSaveConfigBtn").addEventListener("click", () => {
         readGithubInputs();
         showToast("GitHub 配置已保存");
+        if (isGithubConfigured() && githubSync.autoPull) {
+          setTimeout(() => pullFromGithub({ auto: true, askBeforeReplace: false }), 100);
+        }
         if (githubSync.dirty) scheduleGithubAutoPush();
       });
       $("#githubPullBtn").addEventListener("click", () => pullFromGithub());
