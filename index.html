@@ -251,9 +251,18 @@
 
     .overview-grid {
       display: grid;
-      grid-template-columns: 1.35fr 1fr;
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
       gap: 18px;
       align-items: start;
+    }
+
+    .overview-grid > .band,
+    .overview-grid > .panel {
+      min-width: 0;
+    }
+
+    .overview-grid > .band {
+      overflow: hidden;
     }
 
     .band,
@@ -286,53 +295,12 @@
 
     .progress-wrap {
       display: grid;
-      grid-template-columns: 220px minmax(0, 1fr);
-      gap: 22px;
-      align-items: center;
-    }
-
-    .ring {
-      width: 210px;
-      aspect-ratio: 1;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      background: conic-gradient(var(--accent) var(--progress), #e2e8e5 0);
-      position: relative;
-    }
-
-    .ring::after {
-      content: "";
-      width: 152px;
-      aspect-ratio: 1;
-      border-radius: 50%;
-      background: var(--surface);
-      position: absolute;
-    }
-
-    .ring-label {
-      position: relative;
-      z-index: 1;
-      text-align: center;
-    }
-
-    .ring-label strong {
-      display: block;
-      font-size: 42px;
-      line-height: 1;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .ring-label span {
-      display: block;
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 13px;
+      gap: 18px;
     }
 
     .metrics {
       display: grid;
-      grid-template-columns: repeat(4, minmax(112px, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
     }
 
@@ -426,6 +394,7 @@
       background: #fbfcfb;
       text-align: left;
       white-space: normal;
+      overflow: hidden;
     }
 
     .opinion-overview-row:hover {
@@ -446,6 +415,8 @@
       display: grid;
       gap: 10px;
       padding: 18px;
+      min-width: 0;
+      overflow: hidden;
     }
 
     .milestone {
@@ -482,9 +453,10 @@
       gap: 10px;
       padding: 18px;
       width: 100%;
-      min-width: 360px;
+      max-width: 100%;
+      min-width: 0;
       min-height: 300px;
-      resize: both;
+      resize: vertical;
       overflow: auto;
     }
 
@@ -936,9 +908,6 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      .ring {
-        margin: 0 auto;
-      }
     }
 
     @media (max-width: 760px) {
@@ -980,9 +949,6 @@
         min-width: 96px;
       }
 
-      .ring {
-        width: min(210px, 78vw);
-      }
     }
   </style>
 </head>
@@ -1040,12 +1006,6 @@
         <div class="overview-grid">
           <section class="band">
             <div class="progress-wrap">
-              <div class="ring" id="progressRing" style="--progress: 0deg">
-                <div class="ring-label">
-                  <strong id="progressPercent">0%</strong>
-                  <span>完成率</span>
-                </div>
-              </div>
               <div>
                 <div class="metrics">
                   <div class="metric"><span>总任务</span><strong id="metricTotal">0</strong></div>
@@ -1340,6 +1300,14 @@
 
     const defaultTasks = [];
     const defaultMilestones = [];
+    const hiddenMilestoneTitles = new Set([
+      "修订论点定稿",
+      "方法与理论段落完成",
+      "实验图表更新",
+      "回应信初稿",
+      "最终检查",
+      "提交"
+    ]);
 
     const defaultProject = {
       title: "Revision Tracker",
@@ -1425,6 +1393,10 @@
       return result;
     }
 
+    function normalizeMilestones(milestones) {
+      return (Array.isArray(milestones) ? milestones : []).filter(item => !hiddenMilestoneTitles.has(item?.title));
+    }
+
     function normalizeState(input, fallback = defaultState) {
       const source = input && typeof input === "object" ? input : {};
       const base = fallback && typeof fallback === "object" ? fallback : defaultState;
@@ -1434,7 +1406,7 @@
         tasks: mergeDefaultTasks(rawTasks),
         logs: Array.isArray(source.logs) ? source.logs : (Array.isArray(base.logs) ? base.logs : []),
         calendarNotes: normalizeCalendarNotes(source.calendarNotes && typeof source.calendarNotes === "object" ? source.calendarNotes : (base.calendarNotes || {})),
-        milestones: Array.isArray(source.milestones) ? source.milestones : (Array.isArray(base.milestones) ? base.milestones : []),
+        milestones: normalizeMilestones(Array.isArray(source.milestones) ? source.milestones : base.milestones),
         ui: { ...defaultState.ui, ...(base.ui || {}), ...(source.ui || {}), notesExpanded: false },
         letter: { ...defaultState.letter, ...(base.letter || {}), ...(source.letter || {}) }
       };
@@ -2126,9 +2098,6 @@
       const done = state.tasks.filter(task => task.status === "done").length;
       const doing = state.tasks.filter(task => task.status === "doing").length;
       const blocked = state.tasks.filter(task => task.status === "blocked").length;
-      const percent = total ? Math.round((done / total) * 100) : 0;
-      $("#progressPercent").textContent = `${percent}%`;
-      $("#progressRing").style.setProperty("--progress", `${percent * 3.6}deg`);
       $("#metricTotal").textContent = total;
       $("#metricDoing").textContent = doing;
       $("#metricDone").textContent = done;
@@ -2159,7 +2128,7 @@
       $("#nextMilestone").textContent = deadline ? (remainingDays ? `剩余 ${remainingDays} 天` : "已到截止") : "未设置截止";
 
       const milestoneMap = new Map();
-      (state.milestones || defaultMilestones).forEach(item => {
+      normalizeMilestones(state.milestones || defaultMilestones).forEach(item => {
         if (!milestoneMap.has(item.date)) milestoneMap.set(item.date, []);
         milestoneMap.get(item.date).push(item.title);
       });
