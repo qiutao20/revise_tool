@@ -503,7 +503,7 @@
     }
 
     .calendar-day {
-      min-height: 88px;
+      min-height: 184px;
       padding: 8px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -519,8 +519,59 @@
     }
 
     .calendar-day.today {
-      border-color: rgba(37, 99, 235, 0.45);
-      box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.24);
+      border-color: rgba(22, 128, 60, 0.55);
+      background: #e7f7ed;
+      box-shadow: inset 0 0 0 1px rgba(22, 128, 60, 0.3);
+    }
+
+    .calendar-marks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .calendar-mark {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--surface-2);
+      color: var(--muted);
+    }
+
+    .calendar-mark.today {
+      background: rgba(22, 128, 60, 0.16);
+      color: var(--done);
+    }
+
+    .calendar-mark.deadline {
+      background: rgba(180, 35, 24, 0.12);
+      color: var(--danger);
+    }
+
+    .calendar-slots {
+      display: grid;
+      gap: 5px;
+    }
+
+    .calendar-slot {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: 6px;
+      align-items: stretch;
+    }
+
+    .calendar-slot-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      background: var(--surface-2);
+      border-radius: 6px;
     }
 
     .calendar-day.deadline {
@@ -559,6 +610,10 @@
     .calendar-note:focus {
       border-color: rgba(15, 118, 110, 0.38);
       background: #f5faf8;
+    }
+
+    .calendar-slot .calendar-note {
+      min-height: 46px;
     }
 
     .badge {
@@ -1355,6 +1410,21 @@
       return [...mergedTasks, ...customTasks];
     }
 
+    function normalizeCalendarNotes(notes) {
+      const source = notes && typeof notes === "object" ? notes : {};
+      const result = {};
+      Object.keys(source).forEach(key => {
+        // 旧数据：每天一个备注（键形如 2026-06-08）→ 迁移到“早”子块。
+        if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+          const target = `${key}@early`;
+          if (source[key] && !(target in source)) result[target] = source[key];
+        } else {
+          result[key] = source[key];
+        }
+      });
+      return result;
+    }
+
     function normalizeState(input, fallback = defaultState) {
       const source = input && typeof input === "object" ? input : {};
       const base = fallback && typeof fallback === "object" ? fallback : defaultState;
@@ -1363,7 +1433,7 @@
         project: { ...defaultProject, ...(base.project || {}), ...(source.project || {}) },
         tasks: mergeDefaultTasks(rawTasks),
         logs: Array.isArray(source.logs) ? source.logs : (Array.isArray(base.logs) ? base.logs : []),
-        calendarNotes: source.calendarNotes && typeof source.calendarNotes === "object" ? source.calendarNotes : (base.calendarNotes || {}),
+        calendarNotes: normalizeCalendarNotes(source.calendarNotes && typeof source.calendarNotes === "object" ? source.calendarNotes : (base.calendarNotes || {})),
         milestones: Array.isArray(source.milestones) ? source.milestones : (Array.isArray(base.milestones) ? base.milestones : []),
         ui: { ...defaultState.ui, ...(base.ui || {}), ...(source.ui || {}), notesExpanded: false },
         letter: { ...defaultState.letter, ...(base.letter || {}), ...(source.letter || {}) }
@@ -2100,25 +2170,46 @@
       }
 
       const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+      const slots = [
+        { id: "early", label: "早" },
+        { id: "noon", label: "中" },
+        { id: "late", label: "晚" }
+      ];
       const dayCells = days.map(day => {
         const key = localDateKey(day);
         const isPast = day < today;
         const isToday = sameLocalDay(day, today);
         const isDeadline = deadline && sameLocalDay(day, deadlineDay);
-        const defaultNote = [
-          ...(isToday ? ["今天"] : []),
-          ...(milestoneMap.get(key) || []),
-          ...(isDeadline ? ["截止"] : [])
-        ].join("\n");
-        const hasSavedNote = Object.prototype.hasOwnProperty.call(state.calendarNotes || {}, key);
-        const note = hasSavedNote ? state.calendarNotes[key] : defaultNote;
+        const marks = [
+          ...(isToday ? [{ cls: "today", text: "今天" }] : []),
+          ...(milestoneMap.get(key) || []).map(title => ({ cls: "", text: title })),
+          ...(isDeadline ? [{ cls: "deadline", text: "截止" }] : [])
+        ];
+        const marksHtml = marks.length
+          ? `<div class="calendar-marks">${marks
+              .map(mark => `<span class="calendar-mark${mark.cls ? ` ${mark.cls}` : ""}">${escapeHtml(mark.text)}</span>`)
+              .join("")}</div>`
+          : "";
+        const slotsHtml = slots.map(slot => {
+          const slotKey = `${key}@${slot.id}`;
+          const note = Object.prototype.hasOwnProperty.call(state.calendarNotes || {}, slotKey)
+            ? state.calendarNotes[slotKey]
+            : "";
+          return `
+            <div class="calendar-slot">
+              <span class="calendar-slot-label">${slot.label}</span>
+              <div class="calendar-note" contenteditable="true" data-calendar-date="${escapeHtml(slotKey)}" data-default-note="">${escapeHtml(note)}</div>
+            </div>
+          `;
+        }).join("");
         return `
           <div class="calendar-day${isPast ? " past" : ""}${isToday ? " today" : ""}${isDeadline ? " deadline" : ""}">
             <div class="calendar-date">
               <span>${day.getDate()}</span>
               <small>${day.getMonth() + 1}月</small>
             </div>
-            <div class="calendar-note" contenteditable="true" data-calendar-date="${escapeHtml(key)}" data-default-note="${escapeHtml(defaultNote)}">${escapeHtml(note)}</div>
+            ${marksHtml}
+            <div class="calendar-slots">${slotsHtml}</div>
           </div>
         `;
       }).join("");
@@ -2135,9 +2226,10 @@
     function bindCalendarEvents() {
       document.querySelectorAll(".calendar-day").forEach(day => {
         day.addEventListener("click", event => {
-          const note = day.querySelector(".calendar-note");
-          if (!note || note.contains(event.target)) return;
-          note.focus();
+          if (event.target.closest(".calendar-note")) return;
+          const slot = event.target.closest(".calendar-slot");
+          const note = (slot || day).querySelector(".calendar-note");
+          if (note) note.focus();
         });
       });
       document.querySelectorAll("[data-calendar-date]").forEach(cell => {
